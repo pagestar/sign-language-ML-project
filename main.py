@@ -1,68 +1,51 @@
 import torch
-from torch.utils.data import DataLoader, TensorDataset
-
-from convert_data import process_videos
-from model import GestureRNN
-from train_model import train
-
-def pad_features(input_tensors, target_size):
-    padded_tensors = []
-    for tensor in input_tensors:
-        padding_size = target_size - tensor.shape[2]
-        if padding_size > 0:
-            padding = torch.zeros((tensor.shape[0], tensor.shape[1], padding_size))
-            padded_tensor = torch.cat((tensor, padding), dim=2)
-        else:
-            padded_tensor = tensor
-        padded_tensors.append(padded_tensor)
-    return padded_tensors
+import torch.optim as optim
+import torch.nn as nn
+import matplotlib.pyplot as plt
+from Dataloader import FrameDataset, VideoDataAugmentation
+from GestureModel import GestureModel
+from training import train_model, eval_model
 
 def main():
-    video_paths = [
-        "data\晚餐_1.mp4", "data\晚餐_2.MP4", "data\校長_1.mp4", "data\校長_2.MP4",
-        "data\桌子_1.mp4", "data\桌子_2.mp4", "data\風_1.mp4", "data\風_2.MP4",
-        "data\素食_A_1.mp4", "data\素食_A_2.MP4", "data\素食_B_1.mp4", "data\素食_B_2.MP4",
-    ]
+    # 1. 參數設定
+    root_dir = "data"  
+    num_classes = 113
+    feature_dim = 128  
+    hidden_dim = 128  
+    num_layers = 2  
+    learning_rate = 0.0001
+    epochs = 100
 
-    rnn_inputs = process_videos([path.strip() for path in video_paths])
+    transform = VideoDataAugmentation()
 
-    max_feature_size = max(tensor.shape[2] for tensor in rnn_inputs)
-    padded_inputs = pad_features(rnn_inputs, max_feature_size)
+    # 2. 數據集與數據加載
+    dataset = FrameDataset(root_dir=root_dir, transform=transform)  # 使用自定義的FrameDataset類加載數據
 
-    inputs_list = []
-    labels_list = []
-
-    id = 0
-
-    for i, rnn_input in enumerate(padded_inputs):
-        inputs_list.append(rnn_input)
-        labels_list.extend([id] * rnn_input.shape[0])  # 擴展標籤使其符合幀數
-        if i % 2 == 1:
-            id += 1
-
-    # 將所有影片數據和標籤整合
-    inputs = torch.cat(inputs_list, dim=0).float()
-    labels = torch.tensor(labels_list, dtype=torch.long)
-
-    print("Total input shape:", inputs.shape)
-    print("Total label shape:", labels.shape)
-
-    # 建立 DataLoader
-    dataset = TensorDataset(inputs, labels)
-    train_loader = DataLoader(dataset, batch_size=1, shuffle=True)
-
-    # 定義模型超參數
-    input_size = max_feature_size
-    hidden_size = 128
-    output_size = len(video_paths)
-
-    # 初始化模型
-    model = GestureRNN(input_size=input_size, hidden_size=hidden_size, output_size=output_size)
+    # 3. 模型、優化器、損失函數初始化
+    model = GestureModel(input_size=feature_dim, hidden_size=hidden_dim, num_classes=num_classes, num_layers=num_layers)
     model = model.cuda()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    criterion = nn.CrossEntropyLoss()  # 適用於多類別分類
 
-    # 訓練模型
-    num_epochs = 50
-    train(model, train_loader, num_epochs)
+    # 4. 訓練模型
+    print("開始訓練模型...")
+    model, loss_list = train_model(model, optimizer, criterion, dataset, epochs)
+
+    # 5. 評估模型
+    print("開始評估模型...")
+    labels, features = eval_model(model, dataset)
+    print("評估結果：")
+    print("預測標籤：", labels.cpu().numpy())
+    print("特徵向量維度：", features.shape)
+    #print("模型準確率：", (labels == labels.max(1)[1]).sum().item() / labels.shape[0])
+    print("Augmentation count:", transform.augmentation_count)
+
+    # 6. 繪製訓練過程圖
+    plt.plot(loss_list)
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title("Training Loss")
+    plt.show()
 
 if __name__ == "__main__":
     main()
