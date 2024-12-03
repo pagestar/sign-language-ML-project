@@ -41,3 +41,16 @@ max_feature_size = max(tensor.shape[2] for tensor in rnn_inputs)
 padded_inputs = pad_features(rnn_inputs, max_feature_size)
 ```
 
+## Update 
+
+Recommended parameters (stable but quite slow):
+```
+hidden_dim = 128  
+num_layers = 2  
+learning_rate = 0.0001
+epochs = 100
+```
+
+The loss is high with small epoches. If loss > 4, all the prediction wll be the same value.
+
+> Haven't convert the label to word yer.
