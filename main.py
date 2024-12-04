@@ -19,8 +19,8 @@ def main():
     feature_dim = 128
     hidden_dim = 128  
     num_layers = 2  
-    learning_rate = 0.0002
-    epochs = 1
+    learning_rate = 0.00012
+    epochs = 100
 
     transform = VideoDataAugmentation()
 

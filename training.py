@@ -8,7 +8,7 @@ def train_model(model, initial_lr, criterion, dataset, epochs):
     model.train()
     
     optimizer = optim.Adam(model.parameters(), lr=initial_lr)
-    scheduler = StepLR(optimizer, step_size=2, gamma=0.9)  # 每 10 個 epoch 學習率乘以 0.9
+    scheduler = StepLR(optimizer, step_size=10, gamma=0.9)  # 每 10 個 epoch 學習率乘以 0.9
     
     loss_record = [4.8]
     
