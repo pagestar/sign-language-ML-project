@@ -6,15 +6,21 @@ from Dataloader import FrameDataset, VideoDataAugmentation
 from GestureModel import GestureModel
 from training import train_model, eval_model
 
+def print_result(labels, dataset):
+    labels = labels.cpu().numpy()
+    for i in range(len(labels)):
+        print(f"Video {i+1}: Predicted = {dataset.label2word[labels[i]]}, Actual = {dataset.label2word[dataset.labels[i]]}")
+
+
 def main():
     # 1. 參數設定
     root_dir = "data"  
     num_classes = 113
-    feature_dim = 128  
+    feature_dim = 128
     hidden_dim = 128  
     num_layers = 2  
-    learning_rate = 0.0001
-    epochs = 100
+    learning_rate = 0.0002
+    epochs = 1
 
     transform = VideoDataAugmentation()
 
@@ -29,23 +35,26 @@ def main():
 
     # 4. 訓練模型
     print("開始訓練模型...")
-    model, loss_list = train_model(model, optimizer, criterion, dataset, epochs)
+    model, loss_list = train_model(model, learning_rate, criterion, dataset, epochs)
 
     # 5. 評估模型
     print("開始評估模型...")
     labels, features = eval_model(model, dataset)
     print("評估結果：")
-    print("預測標籤：", labels.cpu().numpy())
     print("特徵向量維度：", features.shape)
     #print("模型準確率：", (labels == labels.max(1)[1]).sum().item() / labels.shape[0])
     print("Augmentation count:", transform.augmentation_count)
+    print_result(labels, dataset)
 
     # 6. 繪製訓練過程圖
-    plt.plot(loss_list)
+    plt.plot(loss_list[1:])
     plt.xlabel("Epochs")
     plt.ylabel("Loss")
-    plt.title("Training Loss")
+    plt.title(f"Hidden dim: {hidden_dim}, Learning rate: {learning_rate}, layers: {num_layers}")
     plt.show()
+
+    torch.save(model, 'model.pth')
+
 
 if __name__ == "__main__":
     main()

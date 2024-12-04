@@ -62,33 +62,34 @@ class FrameDataset(Dataset):
 
 
     def _load_data(self):
-        # 掃描根目錄下的子文件夾（單字名稱）
         idx = 0
         video_folders = os.listdir(self.root_dir)
         with tqdm.tqdm(total=len(video_folders), desc="Loading video data") as pbar:
             for label, word in enumerate(os.listdir(self.root_dir)):
                 word_path = os.path.join(self.root_dir, word)
                 if os.path.isdir(word_path):
-                    # self.label_mapping[word] = idx  # 單字映射到標籤
                     self.label2word[label] = word
                     self.word2label[word] = label
                     for id, video_file in enumerate(os.listdir(word_path)):
                         video_path = os.path.join(word_path, video_file)
-                        saved_path = '/'.join(('processed_data', f'{label}', f'{id}'))
+                        saved_path = os.path.join('processed_data', str(label), str(id))
 
-                        if os.path.exists("processed_data"):
-                            logits = self._load_processed_data("processed_data")
-                            frame_count = len(os.listdir("processed_data"))
+                        # 這裡只在第一次處理時加載 processed_data 資料
+                        if os.path.exists(saved_path):
+                            logits = self._load_processed_data(saved_path)
+                            frame_count = len(logits)  # 幀數
                         else:
                             vid = Data(video_path, saved_path, id, self.frame_size)
                             logits = vid.logits
                             frame_count = vid.count
-                            
+
                         self.data.append(logits)
                         self.frames_folders.append(saved_path)
                         self.counts.append(frame_count)
                         self.labels.append(label)
-                pbar.update(1)
+                        #print(f"Loaded label: {label} for word: {word}")
+                    pbar.update(1)
+
 
         # zero padding
         # max_length = max(len(data) for data in self.data)
@@ -99,24 +100,48 @@ class FrameDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        vid = self.data[idx]
-        label = self.labels[idx]
         frames = self._load_frames(self.frames_folders[idx])
+
         if self.transform:
             frames = [self.transform(frame) for frame in frames]
-        return vid, torch.tensor(label, dtype=torch.long)
+
+        # 確保 frames 是 tensor
+        frames = torch.stack([T.ToTensor()(frame) for frame in frames])  # (num_frames, channels, height, width)
+
+        logits = self.data[idx]
+        label = self.labels[idx]
+
+        #print("LOGIT:", logits)
+
+        logits = torch.tensor(np.array(logits), dtype=torch.float32)
+
+        label = torch.tensor(label, dtype=torch.long).unsqueeze(0)  # 包裝 label 為 batch_size=1 的張量
+
+        #print(f"Frames shape: {frames.shape}, Label shape: {label.shape}")
+        return frames, logits, label
+
+
     
-    def _load_processed_data(self, processed_folder_path = "processed_data"):
+    def _load_processed_data(self, processed_folder_path):
         logits = []
+        
+        if not os.path.exists(processed_folder_path):
+            raise ValueError(f"{processed_folder_path} does not exist")
+
+        # 遍歷該路徑下的所有幀資料
         for frame_file in sorted(os.listdir(processed_folder_path)):
-            frame_path = os.path.join(processed_folder_path, frame_file)
-            if frame_file.endswith('.npy'):
-                data = np.load(frame_path)
-            else:
-                data = cv2.imread(frame_path)
-            logits.append(data)
+            if frame_file.endswith('.jpg'):  # 確保是 .jpg 文件
+                frame_path = os.path.join(processed_folder_path, frame_file)
+                frame = cv2.imread(frame_path)  # 加載幀
+                if frame is not None:
+                    logits.append(frame)  # 加入幀到 logits 中
+                else:
+                    print(f"Warning: {frame_file} could not be loaded.")
+        
         return logits
-    
+
+
+        
     def _load_frames(self, video_path):
         # 根據影片路徑讀取每一幀（假設每幀是單獨的圖片）
         frames = []
