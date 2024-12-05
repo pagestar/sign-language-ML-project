@@ -8,7 +8,7 @@ model = torch.load('model.pth')
 model.eval()
 
 # Test the model on a sample input  
-dataset = FrameDataset(root_dir="data")
+dataset = FrameDataset(root_dir="test")
 
 print("開始評估模型...")
 labels, features = eval_model(model, dataset)

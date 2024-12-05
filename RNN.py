@@ -39,7 +39,7 @@ class FrameRNN(nn.Module):
             Tensor: RNN 層的輸出，形狀是 (batch_size, output_size)，即每個樣本的分類結果。
         """
         # 驗證輸入形狀
-        # print(f"Input shape: {x.shape}")
+        
         batch_size, sequence_length, _ = x.shape
 
         # 向前傳遞數據，通過 RNN 層
