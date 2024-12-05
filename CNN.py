@@ -10,14 +10,17 @@ class FrameCNN(nn.Module):
         super(FrameCNN, self).__init__()
         self.features = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             nn.Dropout(0.3),  # 加入Dropout層
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             nn.Dropout(0.3),
             nn.Conv2d(64, feature_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(feature_dim),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(1)
         )

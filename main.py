@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from training import train_model, eval_model
 from torch.nn.utils.rnn import pad_sequence
 import warnings
+import os
 
 def print_result(labels, dataset):
     labels = labels.cpu().numpy()
@@ -35,21 +36,22 @@ def collate_fn(batch):
 def main():
 
     warnings.filterwarnings("ignore", category=UserWarning, message="Feedback manager requires a model with a single signature inference")
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
     # 1. 參數設定
     root_dir = "data"  
-    num_classes = 113
+    num_classes = 10
     feature_dim = 128
-    hidden_dim = 512
-    num_layers = 4   
-    learning_rate = 0.0001
-    epochs = 100
+    hidden_dim = 256
+    num_layers = 4
+    learning_rate = 0.0005
+    epochs = 1500
 
     transform = VideoDataAugmentation()
 
     # 2. 數據集與數據加載
     dataset = FrameDataset(root_dir=root_dir, transform=transform)  # 使用自定義的FrameDataset類加載數據
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=2, collate_fn=collate_fn)  # 定義數據載入器
+    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate_fn)  # 定義數據載入器
 
     # 3. 模型、優化器、損失函數初始化
     model = GestureModel(input_size=feature_dim, hidden_size=hidden_dim, num_classes=num_classes, num_layers=num_layers)
@@ -61,9 +63,11 @@ def main():
     print("開始訓練模型...")
     model, loss_list = train_model(model, learning_rate, criterion, dataloader, epochs)
 
+    torch.save(model, 'model.pth')
+
     # 5. 評估模型
     print("開始評估模型...")
-    labels, features = eval_model(model, dataloader)
+    labels, features = eval_model(model, dataset)
     print("評估結果：")
     print("特徵向量維度：", features.shape)
     #print("模型準確率：", (labels == labels.max(1)[1]).sum().item() / labels.shape[0])
@@ -77,7 +81,7 @@ def main():
     plt.title(f"Hidden dim: {hidden_dim}, Learning rate: {learning_rate}, layers: {num_layers}")
     plt.show()
 
-    torch.save(model, 'model.pth')
+    
 
 
 if __name__ == "__main__":

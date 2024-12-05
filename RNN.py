@@ -18,7 +18,7 @@ class FrameRNN(nn.Module):
         super(FrameRNN, self).__init__()
 
         # 初始化 RNN 層
-        self.rnn = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, bidirectional=True, dropout=0.5)
+        self.rnn = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, bidirectional=True, dropout=0.3)
 
         # 初始化全連接層（FC 層）進行分類
         self.fc = nn.Linear(2 * hidden_size, num_classes)

@@ -9,9 +9,9 @@ def train_model(model, initial_lr, criterion, dataset, epochs):
     model.train()
     
     optimizer = optim.Adam(model.parameters(), lr=initial_lr)
-    scheduler = StepLR(optimizer, step_size=10, gamma=0.8)  # 每 10 個 epoch 學習率乘以 0.9
+    scheduler = StepLR(optimizer, step_size=30, gamma=0.9)  # 每 10 個 epoch 學習率乘以 0.9
     scaler = GradScaler()
-    loss_record = [4.8]
+    loss_record = [4]
     
     for epoch in range(epochs):
         total_loss = 0
@@ -23,12 +23,10 @@ def train_model(model, initial_lr, criterion, dataset, epochs):
                 frames = frames.cuda()  # 確保 frames 也被移動到 GPU
                 
                 optimizer.zero_grad()  # 梯度歸零
-                with autocast():
-                    feature_map, logits = model(frames)
-                    loss = criterion(logits, label)
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
+                feature_map, logits = model(frames)
+                loss = criterion(logits, label)
+                loss.backward()
+                optimizer.step()
 
 
                 total_loss += loss.item()
@@ -51,7 +49,9 @@ def eval_model(model, dataset):
     with torch.no_grad():
         for idx, data in enumerate(dataset):
             imgs = dataset.get_frame_imgs(idx).cuda()  # 影像數據移動到 GPU
-            features, logits = model(imgs)  # 模型前向傳播得到特徵和 logits
+            print(imgs.shape)
+            features, logits = model(imgs.unsqueeze(0))  # 模型前向傳播得到特徵和 logits
+            
             
             # 確認 logits 維度是否正確
             if logits.dim() != 2:

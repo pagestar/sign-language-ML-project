@@ -41,7 +41,7 @@ def process_video_and_save(video_path, save_path, frame_size = (224, 224)):
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
-            print("影片播放完畢或無法讀取影格")
+            #print("影片播放完畢或無法讀取影格")
             break
 
         # 將影像轉為 RGB 格式
