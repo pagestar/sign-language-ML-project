@@ -1,6 +1,7 @@
 import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
+from torch.cuda.amp import autocast, GradScaler
 import tqdm
 
 def train_model(model, initial_lr, criterion, dataset, epochs):
@@ -8,8 +9,8 @@ def train_model(model, initial_lr, criterion, dataset, epochs):
     model.train()
     
     optimizer = optim.Adam(model.parameters(), lr=initial_lr)
-    scheduler = StepLR(optimizer, step_size=10, gamma=0.9)  # 每 10 個 epoch 學習率乘以 0.9
-    
+    scheduler = StepLR(optimizer, step_size=10, gamma=0.8)  # 每 10 個 epoch 學習率乘以 0.9
+    scaler = GradScaler()
     loss_record = [4.8]
     
     for epoch in range(epochs):
@@ -22,15 +23,13 @@ def train_model(model, initial_lr, criterion, dataset, epochs):
                 frames = frames.cuda()  # 確保 frames 也被移動到 GPU
                 
                 optimizer.zero_grad()  # 梯度歸零
-                feature_map, logits = model(frames)  # 前向傳播，傳入 frames 和 imgs
+                with autocast():
+                    feature_map, logits = model(frames)
+                    loss = criterion(logits, label)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
 
-                #print(f"Logits shape: {logits.shape}")
-                #print(f"Label shape: {label.shape}")
-
-
-                loss = criterion(logits, label)  # 計算損失
-                loss.backward()  # 反向傳播
-                optimizer.step()  # 更新權重
 
                 total_loss += loss.item()
                 pbar.set_description(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item():.4f}")
