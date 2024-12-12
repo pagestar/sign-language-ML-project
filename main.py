@@ -3,19 +3,23 @@ import torch.optim as optim
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from Dataloader import FrameDataset, VideoDataAugmentation
-from GestureModel import GestureModel
+from GestureModel import GestureModel, eval_model, train_model
 from torch.utils.data import DataLoader, TensorDataset
-from training import eval_model, train_model
 from torch.nn.utils.rnn import pad_sequence
-from CNN import FrameCNN, train_cnn, eval_cnn, extract_and_combine_features
-import warnings
-import os
+from CNN import FrameCNN, train_cnn, eval_cnn, extract_and_combine_features, test_CNN
 
+
+'''
+Print the predicted and actual labels for each video for GestureModel.
+'''
 def print_result(labels, dataset):
     labels = labels.cpu().numpy()
     for i in range(len(labels)):
         print(f"Video {i+1}: Predicted = {dataset.label2word[labels[i]]}, Actual = {dataset.label2word[dataset.labels[i]]}")
 
+'''
+For dataloader, we need to define a customized collate_fn.
+'''
 def collate_fn(batch):
     frames = [item[0] for item in batch]
     logits = [item[1] for item in batch]
@@ -36,70 +40,78 @@ def collate_fn(batch):
 
 def main():
 
-    warnings.filterwarnings("ignore", category=UserWarning, message="Feedback manager requires a model with a single signature inference")
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-    # 1. 參數設定
     root_dir = "data"  
     num_classes = 10
     feature_dim = 128
-    hidden_dim = 256
-    num_layers = 10
-    learning_rate = 0.0001
-    epochs = 1000
+
+    '''
+    You can adjust the hyperparameters here.
+    '''
+    hidden_dim = 128
+    num_layers = 2
+    learning_rate = 5e-4
+    epochs = 100
 
     transform = VideoDataAugmentation()
 
-    # 2. 數據集與數據加載
-    dataset = FrameDataset(root_dir=root_dir, transform=transform)  # 使用自定義的FrameDataset類加載數據
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate_fn)  # 定義數據載入器
+    '''
+    Dataset & Model 
+    Maybe something is wrong for dataloader
+    '''
+    dataset = FrameDataset(root_dir=root_dir, transform=transform)  
+    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate_fn)  
 
-    cnn = FrameCNN(feature_dim=128).cuda()  # 定義 CNN，輸出特徵維度 128
-    rnn = GestureModel(input_size=128 + 3 * 32 * 32,  # 合併 feature_map 和 frames_flatten 的維度
+    cnn = FrameCNN(feature_dim=128).cuda()  
+    rnn = GestureModel(input_size=128 + 3 * 32 * 32, 
                     hidden_size=hidden_dim, num_classes=num_classes, num_layers=num_layers).cuda()
 
-    # 定義優化器和損失函數
+    '''
+    Optimizers & Loss function
+    '''
     cnn_optimizer = torch.optim.Adam(cnn.parameters(), lr=learning_rate)
     rnn_optimizer = torch.optim.Adam(rnn.parameters(), lr=learning_rate)
     criterion = torch.nn.CrossEntropyLoss()
 
-    # 1. 訓練 CNN
-    print("開始訓練 CNN...")
-    #train_cnn(cnn, cnn_optimizer, criterion, dataset, num_epochs=100)
+    '''
+    Training CNN
+    '''
+    print("Start training CNN...")
+    _, loss_list = train_cnn(cnn, cnn_optimizer, criterion, dataset, num_epochs=epochs)
     #eval_cnn(cnn, dataset)
-    #torch.save(cnn.state_dict(), "trained_cnn.pth")  # 保存訓練好的 CNN
+    test_CNN(cnn, dataset)
+    torch.save(cnn.state_dict(), "trained_cnn.pth")  # Save the model parameters
+    # Plot the training loss of CNN
+    plt.plot(loss_list)
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title(f"Learning rate: {learning_rate}")
+    plt.show()
 
-    # 2. 提取 CNN 特徵並合併降維 frames
-    cnn.load_state_dict(torch.load("trained_cnn.pth"))  # 加載訓練好的 CNN
+    '''
+    Extract feature maps and combine them with frames.
+    Maybe something is wrong in this step.
+    '''
     combined_features = extract_and_combine_features(cnn, dataloader)
 
-    # 3. 准備 RNN 訓練
-    labels = torch.tensor(dataset.labels, dtype=torch.long)  # 確保 labels 也與訓練數據匹配
+    '''
+    Training RNN
+    '''
+    labels = torch.tensor(dataset.labels, dtype=torch.long) 
     rnn_dataset = TensorDataset(combined_features, labels)
-    rnn_loader = DataLoader(rnn_dataset, batch_size=32, shuffle=True)
+    rnn_loader = DataLoader(rnn_dataset, batch_size=16, shuffle=True)
+    print("Start training RNN...")
+    train_model(rnn, criterion, rnn_optimizer, rnn_loader, epochs=epochs)
 
-    # 4. 訓練 RNN
-    print("開始訓練 RNN...")
-    train_model(rnn, criterion, rnn_optimizer, rnn_loader, epochs)
-
-    # 5. 評估模型
-    print("開始評估模型...")
+    '''
+    Evaluate the GestureModel
+    '''
+    print("Evaluate the GestureModel...")
     labels = eval_model(rnn, rnn_loader)
-    print("評估結果：")
+    print("Results:")
     #print("特徵向量維度：", features.shape)
     #print("模型準確率：", (labels == labels.max(1)[1]).sum().item() / labels.shape[0])
     print("Augmentation count:", transform.augmentation_count)
     print_result(labels, dataset)
-
-    '''
-    # 6. 繪製訓練過程圖
-    plt.plot(loss_list[1:])
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.title(f"Hidden dim: {hidden_dim}, Learning rate: {learning_rate}, layers: {num_layers}")
-    plt.show()
-    '''
-
 
 if __name__ == "__main__":
     main()

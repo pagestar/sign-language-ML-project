@@ -1,56 +1,40 @@
-# RNN
-The folder contains these files:
-* `convert_data.py`: Convert multiple data into a format that can be used by the RNN, supported by Mediapipe. A sample data is provided in the `data` folder.
+# Issues
 
-    > You can find a sample output in `output_matrix.txt`.
+Here are some issues that have been observed and need to be addressed:
 
-* `model.py`: A simple RNN model `GestureRNN` that can be trained on the converted data.
-* `train_model.py`: Train and evaluate the `GestureRNN` model on the converted data.
-* `main.py`: The main file.
+## Data Collection
 
-> Haven't evaluate the performance of the model yet.
+We may want to collect more data to improve the accuracy of our model, and a possible solution is to collect data from different sources. We want to find some words that is from another category or language (ASl, JSL, etc.) but with **similar gestures**.
+> See data folder for example
 
-## Padding
+We want to collect at least 10 classes, each with 6-10 videos as possible.
 
-In `main` file, we pad the processed data from Mediapipe to a fixed length. The length is determined by the maximum length of the **tensors**.
-```py
-def pad_features(input_tensors, target_size):
-    '''
-    Pad the input tensors to a fixed length, whicxh is the maximum points that Mediapipe has fetched.
+### WLASL
 
-    Args:
-        input_tensors (list): A list of input tensors (matrices).
-        target_size (int): The target size to pad the tensors, expected to be max_feature_size.
+There is a `achieve.zip` in the folder. This is a dataset from WLASL project. To use the dataset, check if the word have the similar gestures first.
+- [TSL Dictionary](https://twtsl.ccu.edu.tw/TSL/#result)
+- [ASL Dictionary](https://www.handspeak.com/word/)
+> The .zip file is too large to be uploaded to GitHub. So I upload on the [Google Drive](https://drive.google.com/file/d/1dVayiPZ3q1Emkbl0_PwYabxd_C0f2vBR/view?usp=drive_link). Or you may want to visit the [WLASL website](https://dxli94.github.io/WLASL/).
 
-    Returns:    
-        padded_tensors (list): A list of padded input tensors.
-    '''
-    padded_tensors = []
-    for tensor in input_tensors:
-        padding_size = target_size - tensor.shape[2]
-        if padding_size > 0:
-            padding = torch.zeros((tensor.shape[0], tensor.shape[1], padding_size))
-            padded_tensor = torch.cat((tensor, padding), dim=2)
-        else:
-            padded_tensor = tensor
-        padded_tensors.append(padded_tensor)
-    return padded_tensors
+If you find such a word, check `WLASL_v0.3.json` and find the word's class.
+> An easy way is CTRL+F with `"gloss": "{yopr word}"`.
 
-# Get the maximum feature size, which is the maximum number of points that Mediapipe has fetched.
-max_feature_size = max(tensor.shape[2] for tensor in rnn_inputs)
-padded_inputs = pad_features(rnn_inputs, max_feature_size)
-```
+Then refer to the `video_id` and find in the `videos` folder. A word can have multiple videos, so you may want to check all of them.
+> While some of them may be missing.
 
-## Update 
+## CNN
+I have add a function `test_CNN` to test the CNN model individually. It's recommended to train more epochs (> 200). 
+* I have increased the layers, it may need 20-30 secons for 1 epoch. Note that it's for legacy data.
+* You can create a dataloader if you want to speed up by increasing batch size.
+* The scheduler now decreases the learning rate by 0.5 if the model doesn't improve for 5 epochs. 
+* You can adjust any parameters.
 
-Recommended parameters (stable but quite slow):
-```
-hidden_dim = 128  
-num_layers = 2  
-learning_rate = 0.0001
-epochs = 100
-```
+## RNN
+A known issues is that the loss has dropped to 0.0000 after only a few epochs (maybe 10), which may suggest that the model is overfitting. 
+* I'm not sure if there is any troubles in `extract_and_combine_features`.
+* Some suggestions for input data are noted there.
+* You can adjust any parameters.
 
-The loss is high with small epoches. If loss > 4, all the prediction wll be the same value.
+## Other 
 
-> Haven't convert the label to word yer.
+Make sure to check the reviews from other groups and TAs.

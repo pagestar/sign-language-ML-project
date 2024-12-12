@@ -18,20 +18,49 @@ def create_folder(folder_path):
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
 
-def process_video_and_save(video_path, save_path, frame_size = (224, 224)):
+'''
+Update: Add function to normalize landmarks to [0, 1] range.
+'''
+def normalize_landmarks(landmarks, width, height):
+    """
+    將關鍵點正規化到 [0, 1] 範圍。
+
+    Args:
+        landmarks: 原始關鍵點列表，每個關鍵點為 [x, y, z]。
+        width: 影像寬度。
+        height: 影像高度。
+
+    Returns:
+        正規化後的關鍵點列表。
+    """
+    normalized = []
+    for x, y, z in landmarks:
+        normalized.append([x / width, y / height, z])  # x 和 y 按寬高縮放，z 可視需求調整
+    return normalized
+
+def process_video_and_save(video_path, save_path, frame_size=(224, 224)):
     """
     讀取影片並保存每幀偵測到關節點的影像與 MediaPipe 數據。
 
     Args:
         video_path: 輸入影片路徑。
+        save_path: 輸出資料夾路徑。
+        frame_size: 儲存圖片的尺寸。
+
+    Returns:
+        mediapipe_data: 正規化後的 MediaPipe 數據。
+        frame_id: 影像幀數。
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"無法讀取影片，請確認路徑正確：{video_path}")
         return
 
+    # 獲取影像尺寸
+    frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+
     # 建立輸出資料夾
-    # video_name = os.path.splitext(os.path.basename(video_path))[0]
     save_folder = save_path
     create_folder(save_folder)
 
@@ -41,7 +70,6 @@ def process_video_and_save(video_path, save_path, frame_size = (224, 224)):
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
-            #print("影片播放完畢或無法讀取影格")
             break
 
         # 將影像轉為 RGB 格式
@@ -58,18 +86,19 @@ def process_video_and_save(video_path, save_path, frame_size = (224, 224)):
             if hand_results.multi_hand_landmarks:
                 for hand_landmarks in hand_results.multi_hand_landmarks:
                     mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                    for landmark in hand_landmarks.landmark:
-                        frame_data.append([landmark.x, landmark.y, landmark.z])
+                    hand_data = [[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark]
+                    normalized_hand_data = normalize_landmarks(hand_data, frame_width, frame_height)
+                    frame_data.extend(normalized_hand_data)
 
             if pose_results.pose_landmarks:
                 mp_drawing.draw_landmarks(frame, pose_results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-                for landmark in pose_results.pose_landmarks.landmark:
-                    frame_data.append([landmark.x, landmark.y, landmark.z])
+                pose_data = [[lm.x, lm.y, lm.z] for lm in pose_results.pose_landmarks.landmark]
+                normalized_pose_data = normalize_landmarks(pose_data, frame_width, frame_height)
+                frame_data.extend(normalized_pose_data)
 
             # 保存圖片
-            # save_img_path = os.path.join(save_folder, f"frame_{frame_id:04d}.jpg")
             save_img_path = '/'.join((save_folder, f"frame_{frame_id:04d}.jpg"))
-            if (not cv2.imwrite(save_img_path, cv2.resize(frame, frame_size))):
+            if not cv2.imwrite(save_img_path, cv2.resize(frame, frame_size)):
                 print(f'save image {save_img_path} failed')
                 break
             frame_paths.append(save_img_path)
