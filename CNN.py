@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 from Dataloader import FrameDataset
 import tqdm
+import random
 
 '''
 Update: adding more layers to the CNN architecture
@@ -14,34 +15,36 @@ class FrameCNN(nn.Module):
     def __init__(self, feature_dim=128, num_classes=10):
         super(FrameCNN, self).__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1),  
+            nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(16, 32, kernel_size=5, stride=1, padding=1),  
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             nn.Dropout(0.3),
 
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=1),  
+            nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(0.4),
+
+            nn.Conv2d(64, 128, kernel_size=5, stride=2, padding=1),  
             nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             nn.Dropout(0.4),
 
-            nn.Conv2d(128, feature_dim, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(feature_dim),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(1)
         )
+
         self.classifier = nn.Sequential(
-            nn.Linear(feature_dim, 512),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(512, 256),
+            nn.Linear(feature_dim, 256),
+            nn.LayerNorm(256),  # 引入 Layer Normalization
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(256, num_classes)
@@ -59,30 +62,34 @@ The learning rate will be reduced by the factor of 0.5 if the loss does not impr
 You can modify it.
 '''
 def train_cnn(model: FrameCNN, optimizer, criterion, dataset: FrameDataset, num_epochs):
-    model.train()
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=5, verbose=True
+        optimizer, mode='min', factor=0.8, patience=5, verbose=True
     )
+    scaler = torch.cuda.amp.GradScaler()
     loss_lst = []
+    test_acc = []
+    min_loss, patience_count = 10, 0
+    # random choose 15 videos from 39 videosto test
+    test_lst = random.sample(range(39), 15)
     for epoch in range(num_epochs):
+        model.train()
         total_loss = 0
         with tqdm.tqdm(dataset, unit="batch") as pbar:
             for idx, data in enumerate(dataset):
-                imgs = dataset.get_frame_imgs(idx).cuda()  # imgs 應是 (num_frames, channels, height, width)
-                _, _, label = data  # 單一標籤
+                imgs = dataset.get_frame_imgs(idx).cuda()  # imgs 是 (num_frames, channels, height, width)
+                _, _, label = data  # 单一标签
                 
                 optimizer.zero_grad()
-                
-                features, logits = model(imgs)  # 獲取 CNN 特徵與分類結果
-                
-                # 將 label 擴展為與 logits 一致的形狀
-                label_tensor = torch.tensor([label] * imgs.size(0), dtype=torch.long).cuda()
 
+                with torch.cuda.amp.autocast():  # 开启混合精度
+                    features, logits = model(imgs)  # 获取 CNN 特征与分类结果
+                    # 将 label 扩展为与 logits 一致的形状
+                    label_tensor = torch.tensor([label] * imgs.size(0), dtype=torch.long).cuda()
+                    loss = criterion(logits, label_tensor)  # 计算损失
                 
-                loss = criterion(logits, label_tensor)  # 計算損失
-                
-                loss.backward()
-                optimizer.step()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 
                 total_loss += loss.item()
                 pbar.set_postfix(loss=loss.item())
@@ -90,27 +97,48 @@ def train_cnn(model: FrameCNN, optimizer, criterion, dataset: FrameDataset, num_
 
         avg_loss = total_loss / len(dataset)
         scheduler.step(avg_loss)
-        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}")
+
+        if avg_loss < min_loss:
+            min_loss = avg_loss
+            patience_count = 0
+        else:
+            patience_count += 1
+            if patience_count == 20:
+                print("Early stopping...")
+                break
+
+        # 每个epoch后评估一次
+        test_acc.append(eval_cnn(model, dataset, test_lst))
+
+        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}, Testing ACC: {test_acc[-1]:.4f}, Patience: {patience_count}/20")
         loss_lst.append(avg_loss)
-    return model, loss_lst
 
-'''
-Not used for now.
-'''
-def eval_cnn(model: FrameCNN, dataset: FrameDataset):
-    model.eval()
-    feats, labels = [], []
-    with torch.no_grad():
-        for idx, data in enumerate(dataset):
-            imgs = dataset.get_frame_imgs(idx)
-            _, label, _ = data
+    return model, loss_lst, test_acc
 
-            features, logits = model(imgs)
-            predicted_labels = torch.argmax(logits, dim=1)
+def eval_cnn(model: FrameCNN, dataset: FrameDataset, test_lst):
+    test_image, _, label = dataset[0]  # frame, logits, label
+    test_image = test_image[40].unsqueeze(0)  
+    test_image = test_image.cuda()
+    label = label.cuda()
 
-            feats.append(features)
-            labels.append(predicted_labels)
-    return torch.cat(labels), torch.cat(feats)
+    correct = 0
+
+    
+    for idx in test_lst:  
+        test_image, _, label = dataset[idx]
+        test_image = test_image[10].unsqueeze(0).cuda()  
+        
+        with torch.no_grad():
+            _, logits = model(test_image)
+            predicted_label = torch.argmax(logits, dim=1).item()
+
+        if predicted_label == label.item():
+            correct += 1
+
+    accuracy = correct / 15
+    return accuracy
+
+
 
 '''
 Test the CNN performance on a few test samples.
@@ -123,7 +151,9 @@ def test_CNN(model: FrameCNN, dataset: FrameDataset):
     test_image = test_image.cuda()
     label = label.cuda()
 
-    for idx in range(10):  
+    correct = 0
+
+    for idx in range(30):  
         test_image, _, label = dataset[idx]
         test_image = test_image[10].unsqueeze(0).cuda()  
         
@@ -132,8 +162,12 @@ def test_CNN(model: FrameCNN, dataset: FrameDataset):
             predicted_label = torch.argmax(logits, dim=1).item()
             
         print(f"Predicted: {predicted_label}, Actual: {label.item()}")
-        
 
+        if predicted_label == label.item():
+            correct += 1
+
+    print(f"Accuracy: {(correct / 30):.4f}")
+    
 '''
 Combnine the feature map and the frame features to get the final input for the LSTM model.
 Note that the output combines all the frames and maps in a single word (video).
@@ -143,35 +177,35 @@ Suggestions:
     2. We pad the sequences with zeros to make them all the same length (of total frames). Consider implemtenting a mask for RNN.
     3. Do we need to use the original frames?
 '''
-def extract_and_combine_features(cnn_model, data_loader):
+def extract_logits(cnn_model, data_loader):
     cnn_model.eval()  
-    all_combined_features = []
+    all_logits = []
     
     cnn_model.cuda() 
+
     max_frames = 0
     
     with torch.no_grad():
         for frames, _, _ in data_loader:
             frames = frames.cuda()
             batch_size, num_frames, channels, height, width = frames.size()
-            
-            max_frames = max(max_frames, num_frames)  # 更新最大帧數
+            max_frames = max(max_frames, num_frames)
             
             frames_reshaped = frames.view(batch_size * num_frames, channels, height, width)
+            
+            # 获取 CNN 的特征映射（logits）
             feature_map, _ = cnn_model(frames_reshaped)
+            
+            # Reshape feature_map 为 (batch_size, num_frames, -1)
             feature_map = feature_map.view(batch_size, num_frames, -1)
             
-            frames_downsampled = torch.nn.functional.adaptive_avg_pool2d(
-                frames_reshaped, (32, 32))
-            frames_flatten = frames_downsampled.view(batch_size, num_frames, -1)
-            
-            combined_input = torch.cat((frames_flatten, feature_map), dim=2)
-            all_combined_features.append(combined_input)
+            all_logits.append(feature_map)
     
+    # 合并所有帧的特征到一个大的 tensor 中
+    all_logits = [pad_sequence(logits, max_frames) for logits in all_logits]
     
-    all_combined_features = [pad_sequence(f, max_frames) for f in all_combined_features]
-    
-    return torch.cat(all_combined_features, dim=0)
+    return torch.cat(all_logits, dim=0)
+
 
 
 def pad_sequence(tensor, target_len):

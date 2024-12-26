@@ -23,16 +23,16 @@ Train the model. The learning rate is decayed by a factor of 0.9 every 30 epochs
 Note that the dataloader contains "all_combined_features"
 '''
 def train_model(model, criterion, optimizer, dataset, epochs):
-    model.cuda() 
+    model.cuda()  # 将模型移到 GPU
     
-    scheduler = StepLR(optimizer, step_size=30, gamma=0.9)  
+    model.train()  # 确保模型在训练模式下
+    scheduler = StepLR(optimizer, step_size=30, gamma=0.9)  # 每30个epoch降低学习率
     
-    with tqdm.tqdm(enumerate(dataset), total=len(dataset)) as pbar:
-        for epoch in range(epochs):
-            total_loss = 0
+    for epoch in range(epochs):
+        total_loss = 0
+        with tqdm.tqdm(enumerate(dataset), total=len(dataset)) as pbar:
             for idx, data in pbar:
-                #imgs = dataset.get_frame_imgs(idx).cuda()  
-                frames, label = data 
+                frames, label = data
                 label = label.cuda()  
                 frames = frames.cuda()  
                 
@@ -42,14 +42,17 @@ def train_model(model, criterion, optimizer, dataset, epochs):
                 loss.backward()
                 optimizer.step()
 
-
                 total_loss += loss.item()
-        scheduler.step()  
+                
+                # 更新 tqdm 描述
+                pbar.set_description(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item():.4f}")
+        
+        scheduler.step()  # 在每个 epoch 结束时更新学习率
         avg_loss = total_loss / len(dataset)
         print(f"Epoch {epoch + 1}/{epochs}, Avg Loss: {avg_loss:.4f}")
-        pbar.set_description(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item():.4f}")
     
     return model
+
 
 '''
 Evaluate the model.

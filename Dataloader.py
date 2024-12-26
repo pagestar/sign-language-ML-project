@@ -109,11 +109,13 @@ class FrameDataset(Dataset):
         frames = torch.stack([T.ToTensor()(frame) for frame in frames])  # (num_frames, channels, height, width)
 
         logits = self.data[idx]
-        label = self.labels[idx]
+        label = self.labels[idx]                
 
-        # print("LOGIT:", logits)
+        # print("logits:", logits)
+        # print("Length of logits:", len(logits))
 
-        logits = torch.tensor(np.array(logits), dtype=torch.float32)
+
+        logits = torch.tensor(np.stack(logits), dtype=torch.float32)
 
         label = torch.tensor(label, dtype=torch.long).unsqueeze(0)  # 包裝 label 為 batch_size=1 的張量
 
@@ -152,7 +154,7 @@ class FrameDataset(Dataset):
         return frames
 
 class VideoDataAugmentation:
-    def __init__(self, rotation_range=30, scale_range=(0.8, 1.2), flip_prob=0.5, jitter_prob=0.2):
+    def __init__(self, rotation_range=10, scale_range=(0.8, 1.2), flip_prob=0.5, jitter_prob=0.2):
         self.rotation_range = rotation_range  # 旋轉範圍
         self.scale_range = scale_range  # 縮放範圍
         self.flip_prob = flip_prob  # 翻轉概率
@@ -161,7 +163,7 @@ class VideoDataAugmentation:
         # 定義增強操作
         self.transform = T.Compose([
             T.RandomRotation(degrees=self.rotation_range),  # 隨機旋轉
-            T.RandomHorizontalFlip(p=self.flip_prob),  # 隨機水平翻轉
+            # T.RandomHorizontalFlip(p=self.flip_prob),  # 隨機水平翻轉
             T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1) if random.random() < self.jitter_prob else T.Compose([]),
             T.RandomResizedCrop(size=(224, 224), scale=self.scale_range)  # 隨機縮放裁剪
         ])

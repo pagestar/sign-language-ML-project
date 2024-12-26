@@ -6,7 +6,7 @@ from Dataloader import FrameDataset, VideoDataAugmentation
 from GestureModel import GestureModel, eval_model, train_model
 from torch.utils.data import DataLoader, TensorDataset
 from torch.nn.utils.rnn import pad_sequence
-from CNN import FrameCNN, train_cnn, eval_cnn, extract_and_combine_features, test_CNN
+from CNN import FrameCNN, train_cnn, eval_cnn, extract_logits, test_CNN
 
 
 '''
@@ -14,8 +14,14 @@ Print the predicted and actual labels for each video for GestureModel.
 '''
 def print_result(labels, dataset):
     labels = labels.cpu().numpy()
+    correct = 0
+    total = 0
     for i in range(len(labels)):
         print(f"Video {i+1}: Predicted = {dataset.label2word[labels[i]]}, Actual = {dataset.label2word[dataset.labels[i]]}")
+        if labels[i] == dataset.labels[i]:
+            correct += 1
+        total += 1
+    print(f"Accuracy: {correct/total}")
 
 '''
 For dataloader, we need to define a customized collate_fn.
@@ -37,20 +43,29 @@ def collate_fn(batch):
     
     return frames, logits, labels
 
+def plot_loss(loss_list):
+   
+    plt.plot(loss_list, label="Loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title("Training Loss")
+    
+    plt.show()
+
 
 def main():
 
     root_dir = "data"  
-    num_classes = 10
+    num_classes = 5
     feature_dim = 128
 
     '''
     You can adjust the hyperparameters here.
     '''
     hidden_dim = 128
-    num_layers = 2
-    learning_rate = 5e-4
-    epochs = 100
+    num_layers = 3
+    learning_rate = 1e-3
+    epochs = 150
 
     transform = VideoDataAugmentation()
 
@@ -59,46 +74,48 @@ def main():
     Maybe something is wrong for dataloader
     '''
     dataset = FrameDataset(root_dir=root_dir, transform=transform)  
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate_fn)  
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=0, collate_fn=collate_fn)  
 
     cnn = FrameCNN(feature_dim=128).cuda()  
-    rnn = GestureModel(input_size=128 + 3 * 32 * 32, 
+    rnn = GestureModel(input_size=128, 
                     hidden_size=hidden_dim, num_classes=num_classes, num_layers=num_layers).cuda()
 
     '''
     Optimizers & Loss function
     '''
     cnn_optimizer = torch.optim.Adam(cnn.parameters(), lr=learning_rate)
-    rnn_optimizer = torch.optim.Adam(rnn.parameters(), lr=learning_rate)
+    rnn_optimizer = torch.optim.Adam(rnn.parameters(), lr=1e-4, weight_decay=1e-5)
     criterion = torch.nn.CrossEntropyLoss()
 
     '''
     Training CNN
     '''
     print("Start training CNN...")
-    _, loss_list = train_cnn(cnn, cnn_optimizer, criterion, dataset, num_epochs=epochs)
-    #eval_cnn(cnn, dataset)
+    _, loss_list, _ = train_cnn(cnn, cnn_optimizer, criterion, dataset, num_epochs=epochs)
+
+    # load the pre-trained CNN model
+    # cnn.load_state_dict(torch.load("trained_cnn.pth")) 
+
     test_CNN(cnn, dataset)
     torch.save(cnn.state_dict(), "trained_cnn.pth")  # Save the model parameters
     # Plot the training loss of CNN
-    plt.plot(loss_list)
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.title(f"Learning rate: {learning_rate}")
-    plt.show()
+    plot_loss(loss_list)
 
     '''
     Extract feature maps and combine them with frames.
     Maybe something is wrong in this step.
     '''
-    combined_features = extract_and_combine_features(cnn, dataloader)
+    features = extract_logits(cnn, dataloader)
+    print("Feature maps shape:", features.shape)
 
     '''
     Training RNN
     '''
     labels = torch.tensor(dataset.labels, dtype=torch.long) 
-    rnn_dataset = TensorDataset(combined_features, labels)
+    #print(labels)
+    rnn_dataset = TensorDataset(features, labels)
     rnn_loader = DataLoader(rnn_dataset, batch_size=16, shuffle=True)
+
     print("Start training RNN...")
     train_model(rnn, criterion, rnn_optimizer, rnn_loader, epochs=epochs)
 
